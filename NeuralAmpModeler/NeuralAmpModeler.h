@@ -50,6 +50,7 @@ enum EParams
   kInputCalibrationLevel,
   kOutputMode,
   kSlim,
+  kSaloType, // Korpi: Hall / Plate / Shimmer
   kNumParams
 };
 

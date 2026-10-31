@@ -86,6 +86,7 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
   GetParam(kToneTreble)->InitDouble("Neulaset", 5.0, 0.0, 10.0, 0.1);
   GetParam(kSalo)->InitDouble("Salo", 0.0, 0.0, 100.0, 1.0, "%");
   GetParam(kMetso)->InitDouble("Metso", 0.0, 0.0, 100.0, 1.0, "%");
+  GetParam(kSaloType)->InitEnum("SaloType", 0, {"Hall", "Plate", "Shimmer"});
   GetParam(kOutputLevel)->InitGain("Output", 0.0, -40.0, 40.0, 0.1);
   GetParam(kNoiseGateThreshold)->InitGain("Threshold", -80.0, -100.0, 0.0, 0.1);
   GetParam(kNoiseGateActive)->InitBool("NoiseGateActive", true);
@@ -164,6 +165,10 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     const auto ngToggleArea =
       noiseGateArea.GetVShifted(noiseGateArea.H()).SubRectVertical(2, 0).GetReducedFromTop(10.0f);
     const auto eqToggleArea = midKnobArea.GetVShifted(midKnobArea.H()).SubRectVertical(2, 0).GetReducedFromTop(10.0f);
+    // Korpi: reverb type selector under the Salo and Metso knobs
+    const auto saloTypeArea = IRECT(saloKnobArea.L, ngToggleArea.T, metsoKnobArea.R, ngToggleArea.B)
+                                .GetMidVPadded(14.0f)
+                                .GetPadded(-6.0f, 0.0f, -6.0f, 0.0f);
 
     // Areas for model and IR
     const auto fileWidth = 200.0f;
@@ -280,6 +285,13 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     pGraphics->AttachControl(
       new NAMKnobControl(trebleKnobArea, kToneTreble, "", style, knobBackgroundBitmap), -1, "EQ_KNOBS");
     pGraphics->AttachControl(new NAMKnobControl(saloKnobArea, kSalo, "", style, knobBackgroundBitmap));
+    pGraphics
+      ->AttachControl(new IVTabSwitchControl(saloTypeArea, kSaloType, {"Hall", "Plate", "Shimmer"}, "",
+                                             radioButtonStyle.WithShowLabel(false)
+                                               .WithRoundness(0.5f)
+                                               .WithValueText(IText(DEFAULT_TEXT_SIZE + 1.f, EVAlign::Middle,
+                                                                    PluginColors::NAM_THEMEFONTCOLOR))))
+      ->SetTooltip("Salon kaikutyyppi");
     pGraphics->AttachControl(new NAMKnobControl(metsoKnobArea, kMetso, "", style, knobBackgroundBitmap));
     pGraphics->AttachControl(new NAMKnobControl(outputKnobArea, kOutputLevel, "", style, knobBackgroundBitmap));
 
@@ -388,9 +400,8 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
   // mLowPass.SetParams(lowPassParams);
   sample** hpfPointers = mHighPass.Process(irPointers, numChannelsInternal, numFrames);
 
-  // Korpi: Metso (delay) ja sitten Salo (reverb), jotta viiveen toistot kaikuvat luonnollisesti.
+  // Korpi: Metso (delay) here in mono; Salo (stereo reverb) is added after the output stage.
   mMetso.Process(hpfPointers[0], numFrames, GetParam(kMetso)->Value() / 100.0);
-  mSalo.Process(hpfPointers[0], numFrames, GetParam(kSalo)->Value() / 100.0);
   // sample** lpfPointers = mLowPass.Process(hpfPointers, numChannelsInternal, numFrames);
 
   // restore previous floating point state
@@ -399,6 +410,14 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
   // Let's get outta here
   // This is where we exit mono for whatever the output requires.
   _ProcessOutput(hpfPointers, outputs, numFrames, numChannelsInternal, numChannelsExternalOut);
+  // Korpi: Salo works in stereo on the final outputs so the reverb can spread left/right.
+  mSalo.Process(outputs, numChannelsExternalOut, numFrames, GetParam(kSalo)->Value() / 100.0,
+                GetParam(kSaloType)->Int());
+#ifdef APP_API // Keep the standalone app's output within range
+  for (size_t c = 0; c < numChannelsExternalOut; c++)
+    for (size_t s = 0; s < numFrames; s++)
+      outputs[c][s] = std::clamp(outputs[c][s], -1.0, 1.0);
+#endif
   // _ProcessOutput(lpfPointers, outputs, numFrames, numChannelsInternal, numChannelsExternalOut);
   // * Output of input leveling (inputs -> mInputPointers),
   // * Output of output leveling (mOutputPointers -> outputs)

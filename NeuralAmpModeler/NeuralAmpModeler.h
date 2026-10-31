@@ -53,6 +53,9 @@ enum EParams
   kSaloType, // Korpi: Hall / Plate / Shimmer
   kSaloActive, // Korpi: reverb on/off
   kMetsoActive, // Korpi: delay on/off
+  kMetroOn, // Korpi: metronome on/off
+  kMetroBPM, // Korpi: metronome tempo
+  kMetroVolume, // Korpi: metronome level
   kNumParams
 };
 
@@ -71,6 +74,11 @@ enum ECtrlTags
   kCtrlTagSlimmableIcon,
   kCtrlTagSlimOverlayBackdrop,
   kCtrlTagSlimKnob,
+  // Korpi
+  kCtrlTagPresetBrowser,
+  kCtrlTagMetroPanel,
+  kCtrlTagTunerPanel,
+  kCtrlTagTunerDisplay,
   kNumCtrlTags
 };
 
@@ -84,6 +92,8 @@ enum EMsgTags
   kMsgTagLoadFailed,
   kMsgTagLoadedModel,
   kMsgTagLoadedIR,
+  // Korpi: harmless tag for the favourites browser's clear button
+  kMsgTagKorpiNoop,
   kNumMsgTags
 };
 
@@ -212,6 +222,7 @@ public:
   bool SerializeState(iplug::IByteChunk& chunk) const override;
   int UnserializeState(const iplug::IByteChunk& chunk, int startPos) override;
   void OnUIOpen() override;
+  void OnUIClose() override;
   bool OnHostRequestingSupportedViewConfiguration(int width, int height) override { return true; }
 
   void OnParamChange(int paramIdx) override;
@@ -321,6 +332,14 @@ private:
   // Korpi effects
   korpi::Salo mSalo;
   korpi::Metso mMetso;
+  korpi::Metronome mMetronome;
+  korpi::TunerBuffer mTunerBuffer;
+  std::atomic<bool> mTunerOpen = false;
+  std::vector<float> mTunerScratch; // UI thread only
+  std::vector<double> mTapTimes; // UI thread only
+  // Korpi favourites (UI thread)
+  bool _KorpiSavePreset(const WDL_String& filePath);
+  bool _KorpiLoadPreset(const WDL_String& filePath);
   //  recursive_linear_filter::LowPass mLowPass;
 
   // Path to model's config.json or model.nam

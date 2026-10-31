@@ -17,6 +17,9 @@
 #include "architecture.hpp"
 
 #include "NeuralAmpModelerControls.h"
+#include "KorpiControls.h"
+#include <chrono>
+#include <fstream>
 
 #ifdef _WIN32
   #ifndef NOMINMAX
@@ -29,6 +32,16 @@
   #pragma comment(lib, "ole32.lib")
   #pragma comment(lib, "uuid.lib")
 #endif
+
+// Korpi: UTF-8 string -> filesystem path (handles non-ASCII user names on Windows)
+static std::filesystem::path KorpiFsPath(const std::string& utf8)
+{
+#if defined(__cpp_char8_t)
+  return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+#else
+  return std::filesystem::u8path(utf8);
+#endif
+}
 
 // Korpi: returns Documents/Korpi/<sub> (created if missing), or "" if that fails.
 static std::string KorpiUserFolder(const char* sub)
@@ -144,6 +157,9 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
   GetParam(kSaloType)->InitEnum("SaloType", 0, {"Hall", "Plate", "Shimmer"});
   GetParam(kSaloActive)->InitBool("SaloActive", true);
   GetParam(kMetsoActive)->InitBool("MetsoActive", true);
+  GetParam(kMetroOn)->InitBool("MetroOn", false);
+  GetParam(kMetroBPM)->InitDouble("MetroBPM", 120.0, 30.0, 300.0, 1.0, "BPM");
+  GetParam(kMetroVolume)->InitGain("MetroVolume", -12.0, -40.0, 0.0, 0.5);
   GetParam(kOutputLevel)->InitGain("Output", 0.0, -40.0, 40.0, 0.1);
   GetParam(kNoiseGateThreshold)->InitGain("Threshold", -80.0, -100.0, 0.0, 0.1);
   GetParam(kNoiseGateActive)->InitBool("NoiseGateActive", true);
@@ -374,6 +390,77 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     pGraphics->AttachControl(new NAMMeterControl(inputMeterArea, meterBackgroundBitmap, style), kCtrlTagInputMeter);
     pGraphics->AttachControl(new NAMMeterControl(outputMeterArea, meterBackgroundBitmap, style), kCtrlTagOutputMeter);
 
+    // ---------------- Korpi: favourites, tuner and metronome ----------------
+    const auto saveSVG = pGraphics->LoadSVG(KORPI_SAVE_FN);
+    const auto tunerSVG = pGraphics->LoadSVG(KORPI_TUNER_FN);
+    const auto metronomeSVG = pGraphics->LoadSVG(KORPI_METRONOME_FN);
+
+    const IRECT presetArea(36.f, 40.f, 276.f, 70.f);
+    const IRECT saveButtonArea(281.f, 45.f, 301.f, 65.f);
+    const IRECT tunerButtonArea = settingsButtonArea.GetHShifted(-80.f);
+    const IRECT metroButtonArea = settingsButtonArea.GetHShifted(-40.f);
+
+    auto loadPresetCompletionHandler = [&](const WDL_String& fileName, const WDL_String& path) {
+      if (fileName.GetLength() && !_KorpiLoadPreset(fileName))
+        _ShowMessageBox(GetUI(), "Suosikin lataaminen ei onnistunut.", "Korpi", kMB_OK);
+    };
+    pGraphics->AttachControl(new NAMFileBrowserControl(presetArea, kMsgTagKorpiNoop, "Suosikit...", "korpi",
+                                                       loadPresetCompletionHandler, style, fileSVG, crossSVG,
+                                                       leftArrowSVG, rightArrowSVG, fileBackgroundBitmap, globeSVG,
+                                                       "", getUrl),
+                             kCtrlTagPresetBrowser);
+    {
+      auto* presetBrowser = static_cast<NAMFileBrowserControl*>(pGraphics->GetControlWithTag(kCtrlTagPresetBrowser));
+      presetBrowser->KorpiHideGetButton();
+      const std::string dir = KorpiUserFolder("Suosikit");
+      if (!dir.empty())
+        presetBrowser->SetKorpiDefaultDirectory(dir.c_str());
+    }
+
+    auto savePresetFunc = [&](IControl* pCaller) {
+      WDL_String fileName("Uusi suosikki.korpi");
+      WDL_String path(KorpiUserFolder("Suosikit").c_str());
+      pCaller->GetUI()->PromptForFile(
+        fileName, path, EFileAction::Save, "korpi", [&](const WDL_String& chosen, const WDL_String& chosenPath) {
+          if (!chosen.GetLength())
+            return; // Cancelled
+          WDL_String full(chosen);
+          const char* ext = full.get_fileext();
+          if (!ext || strcmp(ext, ".korpi") != 0)
+            full.Append(".korpi");
+          if (_KorpiSavePreset(full))
+          {
+            if (auto* browser = GetUI()->GetControlWithTag(kCtrlTagPresetBrowser))
+              browser->OnMsgFromDelegate(kMsgTagLoadedIR, full.GetLength(), full.Get());
+          }
+          else
+            _ShowMessageBox(GetUI(), "Suosikin tallentaminen ei onnistunut.", "Korpi", kMB_OK);
+        });
+    };
+    pGraphics->AttachControl(new NAMSquareButtonControl(saveButtonArea, DefaultClickActionFunc, saveSVG))
+      ->SetAnimationEndActionFunction(savePresetFunc);
+    pGraphics->GetControl(pGraphics->NControls() - 1)->SetTooltip("Tallenna nykyinen soundi suosikiksi");
+
+    pGraphics
+      ->AttachControl(new NAMCircleButtonControl(
+        tunerButtonArea,
+        [&](IControl* pCaller) {
+          mTunerOpen = true;
+          pCaller->GetUI()->GetControlWithTag(kCtrlTagTunerPanel)->Hide(false);
+          pCaller->GetUI()->SetAllControlsDirty();
+        },
+        tunerSVG))
+      ->SetTooltip("Viritysmittari");
+    pGraphics
+      ->AttachControl(new NAMCircleButtonControl(
+        metroButtonArea,
+        [](IControl* pCaller) {
+          pCaller->GetUI()->GetControlWithTag(kCtrlTagMetroPanel)->Hide(false);
+          pCaller->GetUI()->SetAllControlsDirty();
+        },
+        metronomeSVG))
+      ->SetTooltip("Metronomi");
+
     // Settings/help/about box
     pGraphics->AttachControl(new NAMCircleButtonControl(
       settingsButtonArea,
@@ -394,6 +481,72 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     pGraphics
       ->AttachControl(new NAMKnobControl(slimKnobArea, kSlim, "Slim", style, knobBackgroundBitmap), kCtrlTagSlimKnob)
       ->Hide(true);
+
+    // Korpi: metronome panel
+    {
+      auto* panel = new KorpiPanelControl(b, backgroundBitmap, "METRONOMI");
+      pGraphics->AttachControl(panel, kCtrlTagMetroPanel);
+      const IRECT row = b.GetCentredInside(450.f, NAM_KNOB_HEIGHT).GetVShifted(-10.f);
+      const IRECT onArea = row.GetGridCell(0, 0, 1, 3).GetMidVPadded(30.f);
+      const IRECT bpmArea = row.GetGridCell(0, 1, 1, 3);
+      const IRECT volArea = row.GetGridCell(0, 2, 1, 3);
+      panel->AddChildControl(new NAMSwitchControl(onArea, kMetroOn, "Päällä", style, switchHandleBitmap));
+      panel->AddChildControl(new NAMKnobControl(bpmArea, kMetroBPM, "Tempo", style, knobBackgroundBitmap));
+      panel->AddChildControl(new NAMKnobControl(volArea, kMetroVolume, "Voimakkuus", style, knobBackgroundBitmap));
+      const IRECT tapArea = bpmArea.GetVShifted(bpmArea.H() + 8.f).GetFromTop(32.f).GetHPadded(10.f);
+      panel->AddChildControl(new IVButtonControl(
+        tapArea,
+        [&](IControl* pCaller) {
+          SplashClickActionFunc(pCaller);
+          using clock = std::chrono::steady_clock;
+          const double now = std::chrono::duration<double>(clock::now().time_since_epoch()).count();
+          if (!mTapTimes.empty() && now - mTapTimes.back() > 2.0)
+            mTapTimes.clear(); // Long pause: start a new tap sequence
+          mTapTimes.push_back(now);
+          if (mTapTimes.size() > 5)
+            mTapTimes.erase(mTapTimes.begin());
+          if (mTapTimes.size() >= 2)
+          {
+            const double avg = (mTapTimes.back() - mTapTimes.front()) / (double)(mTapTimes.size() - 1);
+            const double bpm = std::clamp(std::round(60.0 / avg), 30.0, 300.0);
+            const double norm = GetParam(kMetroBPM)->ToNormalized(bpm);
+            BeginInformHostOfParamChangeFromUI(kMetroBPM);
+            SendParameterValueFromUI(kMetroBPM, norm);
+            EndInformHostOfParamChangeFromUI(kMetroBPM);
+            SendParameterValueFromDelegate(kMetroBPM, norm, true);
+          }
+        },
+        "Naputa tempo", style.WithShowValue(false)));
+      panel->AddChildControl(new NAMSquareButtonControl(
+        CornerButtonArea(b),
+        [](IControl* pCaller) {
+          pCaller->GetUI()->GetControlWithTag(kCtrlTagMetroPanel)->Hide(true);
+          pCaller->GetUI()->SetAllControlsDirty();
+        },
+        crossSVG));
+      panel->Hide(true);
+    }
+
+    // Korpi: tuner panel
+    {
+      auto* panel = new KorpiPanelControl(b, backgroundBitmap, "VIRITYS");
+      pGraphics->AttachControl(panel, kCtrlTagTunerPanel);
+      panel->AddChildControl(
+        new KorpiTunerDisplayControl(b.GetCentredInside(480.f, 220.f).GetVShifted(10.f)), kCtrlTagTunerDisplay);
+      panel->AddChildControl(new ITextControl(b.GetFromBottom(60.f).GetVShifted(-10.f),
+                                              "Ääni on mykistetty virityksen ajaksi.",
+                                              IText(15.f, PluginColors::NAM_THEMEFONTCOLOR.WithOpacity(0.7f)),
+                                              COLOR_TRANSPARENT));
+      panel->AddChildControl(new NAMSquareButtonControl(
+        CornerButtonArea(b),
+        [&](IControl* pCaller) {
+          mTunerOpen = false;
+          pCaller->GetUI()->GetControlWithTag(kCtrlTagTunerPanel)->Hide(true);
+          pCaller->GetUI()->SetAllControlsDirty();
+        },
+        crossSVG));
+      panel->Hide(true);
+    }
 
     pGraphics->ForAllControlsFunc([](IControl* pControl) {
       pControl->SetMouseEventsWhenDisabled(true);
@@ -427,6 +580,9 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
   // Input is collapsed to mono in preparation for the NAM.
   _ProcessInput(inputs, numFrames, numChannelsExternalIn, numChannelsInternal);
   _ApplyDSPStaging();
+  // Korpi: feed the tuner while its panel is open
+  if (mTunerOpen)
+    mTunerBuffer.Write(mInputPointers[0], numFrames);
   const bool noiseGateActive = GetParam(kNoiseGateActive)->Value();
   const bool toneStackActive = GetParam(kEQActive)->Value();
 
@@ -488,6 +644,13 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
   // Korpi: Salo works in stereo on the final outputs so the reverb can spread left/right.
   mSalo.Process(outputs, numChannelsExternalOut, numFrames, GetParam(kSalo)->Value() / 100.0,
                 GetParam(kSaloType)->Int(), GetParam(kSaloActive)->Bool());
+  // Korpi: metronome click on top of everything (not through the reverb)
+  mMetronome.Process(outputs, numChannelsExternalOut, numFrames, GetParam(kMetroOn)->Bool(),
+                     GetParam(kMetroBPM)->Value(), DBToAmp(GetParam(kMetroVolume)->Value()));
+  // Korpi: silent while tuning
+  if (mTunerOpen)
+    for (size_t c = 0; c < numChannelsExternalOut; c++)
+      std::fill(outputs[c], outputs[c] + numFrames, 0.0);
 #ifdef APP_API // Keep the standalone app's output within range
   for (size_t c = 0; c < numChannelsExternalOut; c++)
     for (size_t s = 0; s < numFrames; s++)
@@ -512,6 +675,8 @@ void NeuralAmpModeler::OnReset()
   SetTailSize(std::max(tailCycles * (int)(sampleRate / kDCBlockerFrequency), (int)(5.0 * sampleRate)));
   mSalo.Reset(sampleRate);
   mMetso.Reset(sampleRate);
+  mMetronome.Reset(sampleRate);
+  mTunerBuffer.Reset(sampleRate);
   mInputSender.Reset(sampleRate);
   mOutputSender.Reset(sampleRate);
   // If there is a model or IR loaded, they need to be checked for resampling.
@@ -524,6 +689,21 @@ void NeuralAmpModeler::OnIdle()
 {
   mInputSender.TransmitData(*this);
   mOutputSender.TransmitData(*this);
+
+  // Korpi: tuner pitch detection runs here (UI thread), not in the audio thread
+  if (mTunerOpen)
+  {
+    if (auto* pGraphics = GetUI())
+    {
+      if (auto* pDisplay = pGraphics->GetControlWithTag(kCtrlTagTunerDisplay))
+      {
+        double freq = 0.0;
+        if (mTunerBuffer.ReadLatest(mTunerScratch, 2048))
+          freq = korpi::DetectPitch(mTunerScratch, mTunerBuffer.Rate());
+        static_cast<KorpiTunerDisplayControl*>(pDisplay)->SetFrequency(freq);
+      }
+    }
+  }
 
   if (mNewModelLoadedInDSP)
   {
@@ -583,6 +763,13 @@ int NeuralAmpModeler::UnserializeState(const IByteChunk& chunk, int startPos)
   {
     return _UnserializeStateWithUnknownVersion(chunk, startPos);
   }
+}
+
+void NeuralAmpModeler::OnUIClose()
+{
+  // Korpi: never leave the output muted when the window closes with the tuner open
+  mTunerOpen = false;
+  Plugin::OnUIClose();
 }
 
 void NeuralAmpModeler::OnUIOpen()
@@ -1100,3 +1287,137 @@ void NeuralAmpModeler::_UpdateMeters(sample** inputPointer, sample** outputPoint
 
 // HACK
 #include "Unserialization.cpp"
+
+// ---------------------------------------------------------------------------
+// Korpi: favourites (.korpi files, JSON). Called from the UI thread.
+// ---------------------------------------------------------------------------
+namespace
+{
+// Settings that belong to a "sound". Metronome and calibration settings are left out on purpose.
+const char* const kKorpiPresetParams[] = {"Input",    "Threshold",       "Juuret",   "Kaarna",     "Neulaset",
+                                          "Salo",     "Metso",           "Output",   "NoiseGateActive",
+                                          "ToneStack", "IRToggle",       "SaloType", "SaloActive", "MetsoActive",
+                                          "Slim"};
+
+// If a saved path doesn't exist (e.g. a favourite shared by a friend), look for the same file name
+// in Korpi's own folder.
+std::string KorpiResolvePath(const std::string& savedPath, const char* korpiSubfolder)
+{
+  if (savedPath.empty())
+    return savedPath;
+  std::error_code ec;
+  if (std::filesystem::exists(KorpiFsPath(savedPath), ec))
+    return savedPath;
+  const std::string folder = KorpiUserFolder(korpiSubfolder);
+  if (folder.empty())
+    return savedPath;
+  const auto name = KorpiFsPath(savedPath).filename();
+  const auto candidate = KorpiFsPath(folder) / name;
+  if (std::filesystem::exists(candidate, ec))
+  {
+    const auto u8 = candidate.u8string();
+    return std::string(u8.begin(), u8.end());
+  }
+  return savedPath;
+}
+} // namespace
+
+bool NeuralAmpModeler::_KorpiSavePreset(const WDL_String& filePath)
+{
+  try
+  {
+    nlohmann::json j;
+    j["korpi_preset_version"] = 1;
+    j["NAMPath"] = std::string(mNAMPath.Get());
+    j["IRPath"] = std::string(mIRPath.Get());
+    nlohmann::json params = nlohmann::json::object();
+    for (const char* name : kKorpiPresetParams)
+    {
+      for (int i = 0; i < kNumParams; i++)
+      {
+        if (strcmp(GetParam(i)->GetName(), name) == 0)
+        {
+          params[name] = GetParam(i)->Value();
+          break;
+        }
+      }
+    }
+    j["params"] = params;
+    std::ofstream out(KorpiFsPath(filePath.Get()), std::ios::binary | std::ios::trunc);
+    if (!out)
+      return false;
+    out << j.dump(2);
+    return (bool)out;
+  }
+  catch (...)
+  {
+    return false;
+  }
+}
+
+bool NeuralAmpModeler::_KorpiLoadPreset(const WDL_String& filePath)
+{
+  nlohmann::json j;
+  try
+  {
+    std::ifstream in(KorpiFsPath(filePath.Get()), std::ios::binary);
+    if (!in)
+      return false;
+    in >> j;
+  }
+  catch (...)
+  {
+    return false;
+  }
+  if (!j.is_object())
+    return false;
+
+  // Knobs and switches
+  if (j.contains("params") && j["params"].is_object())
+  {
+    for (auto it = j["params"].begin(); it != j["params"].end(); ++it)
+    {
+      if (!it->is_number())
+        continue;
+      for (int i = 0; i < kNumParams; i++)
+      {
+        if (it.key() == GetParam(i)->GetName())
+        {
+          const double norm = GetParam(i)->ToNormalized(it->get<double>());
+          BeginInformHostOfParamChangeFromUI(i);
+          SendParameterValueFromUI(i, norm);
+          EndInformHostOfParamChangeFromUI(i);
+          SendParameterValueFromDelegate(i, norm, true);
+          break;
+        }
+      }
+    }
+  }
+
+  // Amp model and cabinet
+  const std::string namPath = KorpiResolvePath(j.value("NAMPath", std::string()), "Soundit");
+  const std::string irPath = KorpiResolvePath(j.value("IRPath", std::string()), "Kaapit");
+  bool ok = true;
+  if (!namPath.empty())
+  {
+    if (namPath != mNAMPath.Get())
+      ok = _StageModel(WDL_String(namPath.c_str())).empty() && ok;
+  }
+  else if (mNAMPath.GetLength())
+    mShouldRemoveModel = true;
+
+  if (!irPath.empty())
+  {
+    if (irPath != mIRPath.Get())
+      ok = (_StageIR(WDL_String(irPath.c_str())) == dsp::wav::LoadReturnCode::SUCCESS) && ok;
+  }
+  else if (mIRPath.GetLength())
+    mShouldRemoveIR = true;
+
+  if (!ok)
+    _ShowMessageBox(GetUI(),
+                    "Suosikki ladattiin, mutta soundia tai kaappia ei löytynyt. Tarkista, että tiedostot ovat "
+                    "Korpi-kansioissa.",
+                    "Korpi", kMB_OK);
+  return true;
+}

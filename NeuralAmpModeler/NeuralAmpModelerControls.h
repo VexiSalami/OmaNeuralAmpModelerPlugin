@@ -521,6 +521,13 @@ private:
 
 public:
   // Korpi: a folder (e.g. Documents\Korpi\Soundit) whose files are listed when nothing is loaded
+  // Korpi: hide the globe ("Get ...") button for browsers that don't need it
+  void KorpiHideGetButton()
+  {
+    mKorpiNoGetButton = true;
+    SetBrowserState(mBrowserState);
+  }
+
   void SetKorpiDefaultDirectory(const char* dir)
   {
     mKorpiDefaultDir.Set(dir);
@@ -539,6 +546,7 @@ private:
   }
 
   WDL_String mKorpiDefaultDir;
+  bool mKorpiNoGetButton = false;
 
 private:
 
@@ -558,7 +566,7 @@ private:
     {
       case NAMBrowserState::Empty:
         mClearButton->Hide(true);
-        mGetButton->Hide(false);
+        mGetButton->Hide(mKorpiNoGetButton);
         break;
       case NAMBrowserState::Loaded:
         mClearButton->Hide(false);

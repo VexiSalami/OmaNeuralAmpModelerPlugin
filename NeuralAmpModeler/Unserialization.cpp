@@ -124,7 +124,10 @@ int _GetConfigFrom_0_7_14(const iplug::IByteChunk& chunk, int startPos, nlohmann
                                       "Slim",
                                       "SaloType",
                                       "SaloActive",
-                                      "MetsoActive"};
+                                      "MetsoActive",
+                                      "MetroOn",
+                                      "MetroBPM",
+                                      "MetroVolume"};
 
   int pos = _UnserializePathsAndExpectedKeys(chunk, startPos, config, paramNames);
   _UpdateConfigFrom_0_7_14(config);

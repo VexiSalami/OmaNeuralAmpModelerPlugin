@@ -10,6 +10,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <vector>
 
@@ -605,5 +606,199 @@ private:
   Smoother mMix;
   Smoother mFeed;
 };
+
+
+// ---------------------------------------------------------------------------
+// Metronomi: lyhyt "puupalikka"-klikki, ensimmäinen isku korostettuna (4/4)
+// ---------------------------------------------------------------------------
+class Metronome
+{
+public:
+  void Reset(double sampleRate)
+  {
+    mSampleRate = sampleRate;
+    mSamplesToNextBeat = 0.0;
+    mBeat = 0;
+    mClickPos = -1;
+    mWasOn = false;
+  }
+
+  // Lisää klikin kaikkiin ulostulokanaviin. volume: lineaarinen vahvistus.
+  void Process(double** io, size_t numChannels, size_t nFrames, bool on, double bpm, double volume)
+  {
+    if (!on)
+    {
+      mWasOn = false;
+      // Annetaan jo alkaneen klikin soida loppuun, ettei kuulu naksausta
+      if (mClickPos < 0)
+        return;
+    }
+    else if (!mWasOn)
+    {
+      // Käynnistyessä ensimmäinen isku heti
+      mWasOn = true;
+      mSamplesToNextBeat = 0.0;
+      mBeat = 0;
+    }
+    bpm = std::clamp(bpm, 20.0, 400.0);
+    const double samplesPerBeat = 60.0 / bpm * mSampleRate;
+    const int clickLength = (int)(0.035 * mSampleRate);
+
+    for (size_t s = 0; s < nFrames; s++)
+    {
+      if (on)
+      {
+        if (mSamplesToNextBeat <= 0.0)
+        {
+          mClickPos = 0;
+          mAccent = (mBeat == 0);
+          mBeat = (mBeat + 1) % 4;
+          mSamplesToNextBeat += samplesPerBeat;
+        }
+        mSamplesToNextBeat -= 1.0;
+      }
+      if (mClickPos >= 0)
+      {
+        const double t = mClickPos / mSampleRate;
+        const double freq = mAccent ? 2000.0 : 1400.0;
+        const double env = std::exp(-t * 140.0);
+        const double click = (mAccent ? 1.0 : 0.7) * env * std::sin(2.0 * kPi * freq * t);
+        for (size_t c = 0; c < numChannels; c++)
+          io[c][s] += volume * click;
+        if (++mClickPos >= clickLength)
+          mClickPos = -1;
+      }
+    }
+  }
+
+private:
+  double mSampleRate = 48000.0;
+  double mSamplesToNextBeat = 0.0;
+  int mBeat = 0;
+  int mClickPos = -1;
+  bool mAccent = false;
+  bool mWasOn = false;
+};
+
+// ---------------------------------------------------------------------------
+// Viritysmittarin puskuri: äänisäie kirjoittaa, käyttöliittymä lukee.
+// Ääni harvennetaan noin 12 kHz:iin, mikä riittää kitaran sävelille.
+// ---------------------------------------------------------------------------
+class TunerBuffer
+{
+public:
+  static constexpr size_t kSize = 4096;
+
+  void Reset(double sampleRate)
+  {
+    mDecimation = std::max(1, (int)std::lround(sampleRate / 12000.0));
+    mRate = sampleRate / mDecimation;
+    mAccum = 0.0;
+    mAccumCount = 0;
+  }
+
+  double Rate() const { return mRate; }
+
+  // Äänisäikeestä
+  void Write(const double* x, size_t n)
+  {
+    size_t w = mWritePos.load(std::memory_order_relaxed);
+    for (size_t i = 0; i < n; i++)
+    {
+      mAccum += x[i];
+      if (++mAccumCount >= mDecimation)
+      {
+        mBuffer[w % kSize] = (float)(mAccum / mDecimation);
+        w++;
+        mAccum = 0.0;
+        mAccumCount = 0;
+      }
+    }
+    mWritePos.store(w, std::memory_order_release);
+  }
+
+  // Käyttöliittymästä: kopioi viimeisimmät n näytettä
+  bool ReadLatest(std::vector<float>& out, size_t n) const
+  {
+    const size_t w = mWritePos.load(std::memory_order_acquire);
+    if (w < n || n > kSize)
+      return false;
+    out.resize(n);
+    for (size_t i = 0; i < n; i++)
+      out[i] = mBuffer[(w - n + i) % kSize];
+    return true;
+  }
+
+private:
+  float mBuffer[kSize] = {};
+  std::atomic<size_t> mWritePos{0};
+  int mDecimation = 4;
+  double mRate = 12000.0;
+  double mAccum = 0.0;
+  int mAccumCount = 0;
+};
+
+// YIN-sävelentunnistus. Palauttaa taajuuden hertseinä, tai 0 jos selvää säveltä ei löydy.
+inline double DetectPitch(const std::vector<float>& x, double rate, double minFreq = 45.0, double maxFreq = 1400.0)
+{
+  const int n = (int)x.size();
+  const int tauMax = std::min(n / 2, (int)(rate / minFreq) + 2);
+  const int tauMin = std::max(2, (int)(rate / maxFreq));
+  const int w = n - tauMax;
+  if (w <= 0 || tauMax <= tauMin + 2)
+    return 0.0;
+
+  // Hiljaisuus: ei yritetä tunnistaa
+  double energy = 0.0;
+  for (int i = 0; i < n; i++)
+    energy += (double)x[i] * x[i];
+  if (energy / n < 1e-7)
+    return 0.0;
+
+  std::vector<double> d(tauMax + 1, 0.0);
+  for (int tau = 1; tau <= tauMax; tau++)
+  {
+    double sum = 0.0;
+    for (int i = 0; i < w; i++)
+    {
+      const double diff = (double)x[i] - x[i + tau];
+      sum += diff * diff;
+    }
+    d[tau] = sum;
+  }
+  // Kumulatiivinen normalisointi
+  std::vector<double> cmnd(tauMax + 1, 1.0);
+  double running = 0.0;
+  for (int tau = 1; tau <= tauMax; tau++)
+  {
+    running += d[tau];
+    cmnd[tau] = running > 0.0 ? d[tau] * tau / running : 1.0;
+  }
+  // Ensimmäinen kynnyksen alittava kuoppa
+  const double threshold = 0.15;
+  int best = -1;
+  for (int tau = tauMin; tau < tauMax; tau++)
+  {
+    if (cmnd[tau] < threshold)
+    {
+      while (tau + 1 < tauMax && cmnd[tau + 1] < cmnd[tau])
+        tau++;
+      best = tau;
+      break;
+    }
+  }
+  if (best < 0)
+    return 0.0;
+  // Paraabelisovitus tarkemman arvon saamiseksi
+  double refined = best;
+  if (best > 1 && best < tauMax)
+  {
+    const double a = cmnd[best - 1], b = cmnd[best], c = cmnd[best + 1];
+    const double denom = a - 2.0 * b + c;
+    if (std::fabs(denom) > 1e-12)
+      refined = best + 0.5 * (a - c) / denom;
+  }
+  return rate / refined;
+}
 
 } // namespace korpi

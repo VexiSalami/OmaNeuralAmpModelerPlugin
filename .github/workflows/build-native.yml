@@ -61,6 +61,19 @@ jobs:
         .\makedist-win.bat full zip
       shell: pwsh
 
+    - name: Check build result (Korpi)
+      if: matrix.os == 'windows-latest'
+      run: |
+        $log = "${{env.PROJECT_NAME}}\build-win.log"
+        if (Test-Path $log) {
+          Get-Content $log | Select-String -Pattern "error" | Select-Object -First 30 | ForEach-Object { Write-Output "::error::$($_.Line)" }
+        }
+        if (-not (Test-Path "${{env.PROJECT_NAME}}\build-win\Korpi.vst3")) {
+          Write-Output "::error::Korpi.vst3 was not built"
+          exit 1
+        }
+      shell: pwsh
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:

@@ -113,7 +113,7 @@ int _GetConfigFrom_0_7_14(const iplug::IByteChunk& chunk, int startPos, nlohmann
                                       "Kaarna",
                                       "Neulaset",
                                       "Salo",
-                                      "Metso",
+                                      "Käki",
                                       "Output",
                                       "NoiseGateActive",
                                       "ToneStack",
@@ -124,7 +124,7 @@ int _GetConfigFrom_0_7_14(const iplug::IByteChunk& chunk, int startPos, nlohmann
                                       "Slim",
                                       "SaloType",
                                       "SaloActive",
-                                      "MetsoActive",
+                                      "KakiActive",
                                       "MetroOn",
                                       "MetroBPM",
                                       "MetroVolume"};

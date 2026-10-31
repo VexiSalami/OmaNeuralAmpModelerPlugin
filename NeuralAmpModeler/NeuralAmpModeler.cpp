@@ -153,10 +153,10 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
   GetParam(kToneMid)->InitDouble("Kaarna", 5.0, 0.0, 10.0, 0.1);
   GetParam(kToneTreble)->InitDouble("Neulaset", 5.0, 0.0, 10.0, 0.1);
   GetParam(kSalo)->InitDouble("Salo", 0.0, 0.0, 100.0, 1.0, "%");
-  GetParam(kMetso)->InitDouble("Metso", 0.0, 0.0, 100.0, 1.0, "%");
+  GetParam(kMetso)->InitDouble("Käki", 0.0, 0.0, 100.0, 1.0, "%");
   GetParam(kSaloType)->InitEnum("SaloType", 0, {"Hall", "Plate", "Shimmer"});
   GetParam(kSaloActive)->InitBool("SaloActive", true);
-  GetParam(kMetsoActive)->InitBool("MetsoActive", true);
+  GetParam(kMetsoActive)->InitBool("KakiActive", true);
   GetParam(kMetroOn)->InitBool("MetroOn", false);
   GetParam(kMetroBPM)->InitDouble("MetroBPM", 120.0, 30.0, 300.0, 1.0, "BPM");
   GetParam(kMetroVolume)->InitGain("MetroVolume", -12.0, -40.0, 0.0, 0.5);
@@ -382,7 +382,7 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     pGraphics->AttachControl(new NAMSwitchControl(saloToggleArea, kSaloActive, "", style, switchHandleBitmap))
       ->SetTooltip("Salo päälle / pois (säädöt säilyvät)");
     pGraphics->AttachControl(new NAMSwitchControl(metsoToggleArea, kMetsoActive, "", style, switchHandleBitmap))
-      ->SetTooltip("Metso päälle / pois (säädöt säilyvät)");
+      ->SetTooltip("Käki päälle / pois (säädöt säilyvät)");
     pGraphics->AttachControl(new NAMKnobControl(metsoKnobArea, kMetso, "", style, knobBackgroundBitmap));
     pGraphics->AttachControl(new NAMKnobControl(outputKnobArea, kOutputLevel, "", style, knobBackgroundBitmap));
 
@@ -450,7 +450,7 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
           pCaller->GetUI()->SetAllControlsDirty();
         },
         tunerSVG))
-      ->SetTooltip("Viritysmittari");
+      ->SetTooltip("Otava");
     pGraphics
       ->AttachControl(new NAMCircleButtonControl(
         metroButtonArea,
@@ -459,7 +459,7 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
           pCaller->GetUI()->SetAllControlsDirty();
         },
         metronomeSVG))
-      ->SetTooltip("Metronomi");
+      ->SetTooltip("Tikka");
 
     // Settings/help/about box
     pGraphics->AttachControl(new NAMCircleButtonControl(
@@ -484,7 +484,7 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
 
     // Korpi: metronome panel
     {
-      auto* panel = new KorpiPanelControl(b, backgroundBitmap, "METRONOMI");
+      auto* panel = new KorpiPanelControl(b, backgroundBitmap, "TIKKA");
       pGraphics->AttachControl(panel, kCtrlTagMetroPanel);
       const IRECT row = b.GetCentredInside(450.f, NAM_KNOB_HEIGHT).GetVShifted(-10.f);
       const IRECT onArea = row.GetGridCell(0, 0, 1, 3).GetMidVPadded(30.f);
@@ -529,7 +529,7 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
 
     // Korpi: tuner panel
     {
-      auto* panel = new KorpiPanelControl(b, backgroundBitmap, "VIRITYS");
+      auto* panel = new KorpiPanelControl(b, backgroundBitmap, "OTAVA");
       pGraphics->AttachControl(panel, kCtrlTagTunerPanel);
       panel->AddChildControl(
         new KorpiTunerDisplayControl(b.GetCentredInside(480.f, 220.f).GetVShifted(10.f)), kCtrlTagTunerDisplay);
@@ -1295,8 +1295,8 @@ namespace
 {
 // Settings that belong to a "sound". Metronome and calibration settings are left out on purpose.
 const char* const kKorpiPresetParams[] = {"Input",    "Threshold",       "Juuret",   "Kaarna",     "Neulaset",
-                                          "Salo",     "Metso",           "Output",   "NoiseGateActive",
-                                          "ToneStack", "IRToggle",       "SaloType", "SaloActive", "MetsoActive",
+                                          "Salo",     "Käki",            "Output",   "NoiseGateActive",
+                                          "ToneStack", "IRToggle",       "SaloType", "SaloActive", "KakiActive",
                                           "Slim"};
 
 // If a saved path doesn't exist (e.g. a favourite shared by a friend), look for the same file name
@@ -1379,9 +1379,15 @@ bool NeuralAmpModeler::_KorpiLoadPreset(const WDL_String& filePath)
     {
       if (!it->is_number())
         continue;
+      // Favourites saved before the Metso -> Käki rename
+      std::string key = it.key();
+      if (key == "Metso")
+        key = "Käki";
+      else if (key == "MetsoActive")
+        key = "KakiActive";
       for (int i = 0; i < kNumParams; i++)
       {
-        if (it.key() == GetParam(i)->GetName())
+        if (key == GetParam(i)->GetName())
         {
           const double norm = GetParam(i)->ToNormalized(it->get<double>());
           BeginInformHostOfParamChangeFromUI(i);

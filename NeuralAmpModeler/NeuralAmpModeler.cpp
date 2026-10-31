@@ -379,9 +379,10 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
                                                .WithValueText(IText(DEFAULT_TEXT_SIZE - 1.f, EVAlign::Middle,
                                                                     PluginColors::NAM_THEMEFONTCOLOR))))
       ->SetTooltip("Salon kaikutyyppi");
-    pGraphics->AttachControl(new NAMSwitchControl(saloToggleArea, kSaloActive, "", style, switchHandleBitmap))
+    // " " (not "") so the internal parameter name isn't shown as a label
+    pGraphics->AttachControl(new NAMSwitchControl(saloToggleArea, kSaloActive, " ", style, switchHandleBitmap))
       ->SetTooltip("Salo päälle / pois (säädöt säilyvät)");
-    pGraphics->AttachControl(new NAMSwitchControl(metsoToggleArea, kMetsoActive, "", style, switchHandleBitmap))
+    pGraphics->AttachControl(new NAMSwitchControl(metsoToggleArea, kMetsoActive, " ", style, switchHandleBitmap))
       ->SetTooltip("Käki päälle / pois (säädöt säilyvät)");
     pGraphics->AttachControl(new NAMKnobControl(metsoKnobArea, kMetso, "", style, knobBackgroundBitmap));
     pGraphics->AttachControl(new NAMKnobControl(outputKnobArea, kOutputLevel, "", style, knobBackgroundBitmap));

@@ -1,5 +1,6 @@
 #include <algorithm> // std::clamp, std::min
 #include <cmath> // pow
+#include <cstdlib> // getenv
 #include <filesystem>
 #include <iostream>
 #include <utility>
@@ -16,6 +17,60 @@
 #include "architecture.hpp"
 
 #include "NeuralAmpModelerControls.h"
+
+#ifdef _WIN32
+  #ifndef NOMINMAX
+    #define NOMINMAX
+  #endif
+  #include <windows.h>
+  #include <shlobj.h>
+  #include <knownfolders.h>
+  #pragma comment(lib, "shell32.lib")
+  #pragma comment(lib, "ole32.lib")
+  #pragma comment(lib, "uuid.lib")
+#endif
+
+// Korpi: returns Documents/Korpi/<sub> (created if missing), or "" if that fails.
+static std::string KorpiUserFolder(const char* sub)
+{
+  std::string docs;
+#ifdef _WIN32
+  PWSTR widePath = nullptr;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_CREATE, nullptr, &widePath)) && widePath)
+  {
+    const int len = WideCharToMultiByte(CP_UTF8, 0, widePath, -1, nullptr, 0, nullptr, nullptr);
+    if (len > 1)
+    {
+      docs.resize((size_t)len - 1);
+      WideCharToMultiByte(CP_UTF8, 0, widePath, -1, &docs[0], len, nullptr, nullptr);
+    }
+  }
+  if (widePath)
+    CoTaskMemFree(widePath);
+  const char* sep = "\\";
+#else
+  if (const char* home = std::getenv("HOME"))
+    docs = std::string(home) + "/Documents";
+  const char* sep = "/";
+#endif
+  if (docs.empty())
+    return "";
+  const std::string dir = docs + sep + "Korpi" + sep + sub;
+  try
+  {
+#if defined(__cpp_char8_t)
+    const std::filesystem::path fsPath(std::u8string(dir.begin(), dir.end()));
+#else
+    const std::filesystem::path fsPath = std::filesystem::u8path(dir);
+#endif
+    std::filesystem::create_directories(fsPath);
+  }
+  catch (...)
+  {
+    return "";
+  }
+  return dir;
+}
 
 using namespace iplug;
 using namespace igraphics;
@@ -235,8 +290,8 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     const std::string defaultNamFileString = "Select model directory...";
     const std::string defaultIRString = "Select IR directory...";
 #else
-    const std::string defaultNamFileString = "Select model...";
-    const std::string defaultIRString = "Select IR...";
+    const std::string defaultNamFileString = "Valitse soundi...";
+    const std::string defaultIRString = "Valitse kaappi...";
 #endif
     // Getting started page listing additional resources
     const char* const getUrl = "https://www.neuralampmodeler.com/users#comp-marb84o5";
@@ -245,6 +300,12 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
                                 loadModelCompletionHandler, style, fileSVG, crossSVG, leftArrowSVG, rightArrowSVG,
                                 fileBackgroundBitmap, globeSVG, "Get NAM Models", getUrl),
       kCtrlTagModelFileBrowser);
+    {
+      const std::string dir = KorpiUserFolder("Soundit");
+      if (!dir.empty())
+        static_cast<NAMFileBrowserControl*>(pGraphics->GetControlWithTag(kCtrlTagModelFileBrowser))
+          ->SetKorpiDefaultDirectory(dir.c_str());
+    }
 
     auto hideSlimOverlay = [](IControl* pCaller) {
       IGraphics* ui = pCaller->GetUI();
@@ -275,6 +336,12 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
                                 fileSVG, crossSVG, leftArrowSVG, rightArrowSVG, fileBackgroundBitmap, globeSVG,
                                 "Get IRs", getUrl),
       kCtrlTagIRFileBrowser);
+    {
+      const std::string dir = KorpiUserFolder("Kaapit");
+      if (!dir.empty())
+        static_cast<NAMFileBrowserControl*>(pGraphics->GetControlWithTag(kCtrlTagIRFileBrowser))
+          ->SetKorpiDefaultDirectory(dir.c_str());
+    }
     pGraphics->AttachControl(
       new NAMSwitchControl(ngToggleArea, kNoiseGateActive, "Noise Gate", style, switchHandleBitmap));
     pGraphics->AttachControl(new NAMSwitchControl(eqToggleArea, kEQActive, "EQ", style, switchHandleBitmap));

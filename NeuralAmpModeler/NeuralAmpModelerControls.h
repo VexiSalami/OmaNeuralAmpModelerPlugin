@@ -340,6 +340,9 @@ public:
       WDL_String fileName;
       WDL_String path;
       GetSelectedFileDirectory(path);
+      // Korpi: start the file dialog in Korpi's own folder when nothing is loaded yet
+      if (!path.GetLength() && mKorpiDefaultDir.GetLength())
+        path.Set(mKorpiDefaultDir.Get());
 #ifdef NAM_PICK_DIRECTORY
       pCaller->GetUI()->PromptForDirectory(path, [&](const WDL_String& fileName, const WDL_String& path) {
         if (path.GetLength())
@@ -370,6 +373,8 @@ public:
       pCaller->GetDelegate()->SendArbitraryMsgFromUI(mClearMsgTag);
       mFileNameControl->SetLabelAndTooltip(mDefaultLabelStr.Get());
       SetBrowserState(NAMBrowserState::Empty);
+      // Korpi: go back to listing Korpi's own folder
+      _KorpiShowDefaultDirectory();
       // FIXME disabling output mode...
       //      pCaller->GetUI()->GetControlWithTag(kCtrlTagOutputMode)->SetDisabled(false);
     };
@@ -377,7 +382,11 @@ public:
     auto chooseFileFunc = [&, loadFileFunc](IControl* pCaller) {
       if (std::string_view(pCaller->As<IVButtonControl>()->GetLabelStr()) == mDefaultLabelStr.Get())
       {
-        loadFileFunc(pCaller);
+        // Korpi: if Korpi's folder has files, show them as a list; otherwise open the file dialog
+        if (NItems() > 0)
+          pCaller->GetUI()->CreatePopupMenu(*this, mMainMenu, pCaller->GetRECT());
+        else
+          loadFileFunc(pCaller);
       }
       else
       {
@@ -509,6 +518,29 @@ private:
   }
 
   void SelectFirstFile() { mSelectedItemIndex = mFiles.GetSize() ? 0 : -1; }
+
+public:
+  // Korpi: a folder (e.g. Documents\Korpi\Soundit) whose files are listed when nothing is loaded
+  void SetKorpiDefaultDirectory(const char* dir)
+  {
+    mKorpiDefaultDir.Set(dir);
+    if (mBrowserState == NAMBrowserState::Empty)
+      _KorpiShowDefaultDirectory();
+  }
+
+private:
+  void _KorpiShowDefaultDirectory()
+  {
+    if (!mKorpiDefaultDir.GetLength())
+      return;
+    ClearPathList();
+    AddPath(mKorpiDefaultDir.Get(), "");
+    SetupMenu();
+  }
+
+  WDL_String mKorpiDefaultDir;
+
+private:
 
   void GetSelectedFileDirectory(WDL_String& path)
   {

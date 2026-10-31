@@ -423,12 +423,16 @@ public:
 
     mInputHP.Set(sampleRate, 150.0); // Kaikuun ei bassoa: soundi pysyy selkeänä
     mMix.Reset(sampleRate);
+    mFeed.Reset(sampleRate, 0.01);
+    mFeed.Jump(1.0);
     mType = -1;
     mReady = true;
   }
 
   // io: ulostulokanavat (1 tai 2), amount 0..1, type 0..2
-  void Process(double** io, size_t numChannels, size_t nFrames, double amount, int type)
+  // active = false: uutta ääntä ei enää syötetä kaikuun, mutta jo soiva häntä
+  // saa hiipua luonnollisesti (kuten "trails"-toiminto kaikupedaaleissa).
+  void Process(double** io, size_t numChannels, size_t nFrames, double amount, int type, bool active = true)
   {
     if (!mReady || numChannels == 0)
       return;
@@ -450,12 +454,14 @@ public:
       mType = type;
     }
     mMix.SetTarget(amount);
+    mFeed.SetTarget(active ? 1.0 : 0.0);
 
     for (size_t s = 0; s < nFrames; s++)
     {
       const double mix = mMix.Next();
+      const double feed = mFeed.Next();
       const double dry = (numChannels >= 2) ? 0.5 * (io[0][s] + io[1][s]) : io[0][s];
-      const double in = mInputHP.Process(dry);
+      const double in = mInputHP.Process(feed * dry);
       double wetL = 0.0, wetR = 0.0;
 
       switch (mType)
@@ -513,6 +519,7 @@ private:
   double mShimmerFeedback = 0.0;
   OnePoleHP mInputHP;
   Smoother mMix;
+  Smoother mFeed;
   int mType = -1;
   bool mReady = false;
 };
@@ -536,19 +543,24 @@ public:
     mLowPassCoeff = std::exp(-2.0 * pi * 3200.0 / sampleRate);
     mHighPassCoeff = std::exp(-2.0 * pi * 120.0 / sampleRate);
     mMix.Reset(sampleRate);
+    mFeed.Reset(sampleRate, 0.01);
+    mFeed.Jump(1.0);
     mDelaySamples = kDelaySeconds * sampleRate;
   }
 
   // amount: 0..1 (nupin arvo)
-  void Process(double* io, size_t nFrames, double amount)
+  // active = false: toistot hiipuvat luonnollisesti, uutta ääntä ei viivästetä
+  void Process(double* io, size_t nFrames, double amount, bool active = true)
   {
     if (mBuffer.empty())
       return;
     mMix.SetTarget(amount);
+    mFeed.SetTarget(active ? 1.0 : 0.0);
     const size_t size = mBuffer.size();
     for (size_t s = 0; s < nFrames; s++)
     {
       const double mix = mMix.Next();
+      const double feed = mFeed.Next();
       const double dry = io[s];
 
       // Luetaan viivästetty ääni (lineaarinen interpolointi)
@@ -567,7 +579,7 @@ public:
       mHighPassState = hp;
 
       // Pehmeä leikkaus estää viiveen karkaamisen käsistä
-      mBuffer[mWriteIndex] = std::tanh(dry + kFeedback * hp);
+      mBuffer[mWriteIndex] = std::tanh(feed * dry + kFeedback * hp);
       if (++mWriteIndex >= size)
         mWriteIndex = 0;
 
@@ -591,6 +603,7 @@ private:
   double mHighPassState = 0.0;
   double mHighPassPrevIn = 0.0;
   Smoother mMix;
+  Smoother mFeed;
 };
 
 } // namespace korpi

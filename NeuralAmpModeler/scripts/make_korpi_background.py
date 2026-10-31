@@ -10,7 +10,7 @@ import sys
 
 from PIL import Image, ImageDraw, ImageFilter
 
-W, H = 760, 400  # Must match PLUG_WIDTH / PLUG_HEIGHT in config.h
+W, H = 760, 430  # Must match PLUG_WIDTH / PLUG_HEIGHT in config.h
 S = 3  # Draw at 3x, then scale down
 
 

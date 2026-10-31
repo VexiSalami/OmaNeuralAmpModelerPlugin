@@ -122,7 +122,9 @@ int _GetConfigFrom_0_7_14(const iplug::IByteChunk& chunk, int startPos, nlohmann
                                       "InputCalibrationLevel",
                                       "OutputMode",
                                       "Slim",
-                                      "SaloType"};
+                                      "SaloType",
+                                      "SaloActive",
+                                      "MetsoActive"};
 
   int pos = _UnserializePathsAndExpectedKeys(chunk, startPos, config, paramNames);
   _UpdateConfigFrom_0_7_14(config);

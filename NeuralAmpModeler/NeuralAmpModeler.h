@@ -51,6 +51,8 @@ enum EParams
   kOutputMode,
   kSlim,
   kSaloType, // Korpi: Hall / Plate / Shimmer
+  kSaloActive, // Korpi: reverb on/off
+  kMetsoActive, // Korpi: delay on/off
   kNumParams
 };
 

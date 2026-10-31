@@ -10,6 +10,7 @@
 
 #include "Colors.h"
 #include "ToneStack.h"
+#include "KorpiFX.h"
 
 #include "IPlug_include_in_plug_hdr.h"
 #include "ISender.h"
@@ -37,6 +38,8 @@ enum EParams
   kToneBass,
   kToneMid,
   kToneTreble,
+  kSalo, // Korpi: reverb
+  kMetso, // Korpi: delay
   kOutputLevel,
   // The rest is fine though.
   kNoiseGateActive,
@@ -50,7 +53,7 @@ enum EParams
   kNumParams
 };
 
-const int numKnobs = 6;
+const int numKnobs = 8;
 
 enum ECtrlTags
 {
@@ -312,6 +315,9 @@ private:
 
   // Post-IR filters
   recursive_linear_filter::HighPass mHighPass;
+  // Korpi effects
+  korpi::Salo mSalo;
+  korpi::Metso mMetso;
   //  recursive_linear_filter::LowPass mLowPass;
 
   // Path to model's config.json or model.nam

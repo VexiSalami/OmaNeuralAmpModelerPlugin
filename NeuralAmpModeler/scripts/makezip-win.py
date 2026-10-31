@@ -40,10 +40,11 @@ def main():
             projectpath + "\\manual\\NeuralAmpModeler manual.pdf",
         ]
     else:
+        # Korpi: binary name comes from BINARY_NAME in config/NeuralAmpModeler-win.props
         files = [
             projectpath
-            + "\\build-win\\NeuralAmpModeler.vst3\\Contents\\x86_64-win\\NeuralAmpModeler.vst3",
-            projectpath + "\\build-win\\NeuralAmpModeler_x64.exe",
+            + "\\build-win\\Korpi.vst3\\Contents\\x86_64-win\\Korpi.vst3",
+            projectpath + "\\build-win\\Korpi_x64.exe",
         ]
 
     zipname = get_archive_name(projectpath, "win", "demo" if demo == 1 else "full")
@@ -69,8 +70,10 @@ def main():
     ]
 
     for f in files:
-        print("adding " + f)
-        zf.write(f, os.path.basename(f), zipfile.ZIP_DEFLATED)
+        # Korpi: debug symbol names vary; skip any that don't exist
+        if os.path.exists(f):
+            print("adding " + f)
+            zf.write(f, os.path.basename(f), zipfile.ZIP_DEFLATED)
 
     zf.close()
     print("wrote " + zipname)

@@ -1,12 +1,12 @@
-#define PLUG_NAME "NeuralAmpModeler"
-#define PLUG_MFR "Steven Atkinson"
+#define PLUG_NAME "Korpi"
+#define PLUG_MFR "VexiSalami"
 #define PLUG_VERSION_HEX 0x00000800
 #define PLUG_VERSION_STR "0.8.0"
-#define PLUG_UNIQUE_ID '1YEo'
-#define PLUG_MFR_ID 'SDAa'
-#define PLUG_URL_STR "https://github.com/sdatkinson/NeuralAmpModelerPlugin"
+#define PLUG_UNIQUE_ID 'Krp1'
+#define PLUG_MFR_ID 'VxSl'
+#define PLUG_URL_STR "https://github.com/VexiSalami/OmaNeuralAmpModelerPlugin"
 #define PLUG_EMAIL_STR "spam@me.com"
-#define PLUG_COPYRIGHT_STR "Copyright 2022 Steven Atkinson"
+#define PLUG_COPYRIGHT_STR "Based on Neural Amp Modeler, Copyright 2022 Steven Atkinson (MIT)"
 #define PLUG_CLASS_NAME NeuralAmpModeler
 #define BUNDLE_NAME "NeuralAmpModeler"
 #define BUNDLE_MFR "StevenAtkinson"
@@ -27,7 +27,7 @@
 #define PLUG_DOES_MPE 0
 #define PLUG_DOES_STATE_CHUNKS 0
 #define PLUG_HAS_UI 1
-#define PLUG_WIDTH 600
+#define PLUG_WIDTH 760
 #define PLUG_HEIGHT 400
 #define PLUG_FPS 60
 #define PLUG_SHARED_RESOURCES 0

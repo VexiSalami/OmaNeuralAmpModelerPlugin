@@ -81,9 +81,11 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
   _InitToneStack();
   nam::activations::Activation::enable_fast_tanh();
   GetParam(kInputLevel)->InitGain("Input", 0.0, -20.0, 20.0, 0.1);
-  GetParam(kToneBass)->InitDouble("Bass", 5.0, 0.0, 10.0, 0.1);
-  GetParam(kToneMid)->InitDouble("Middle", 5.0, 0.0, 10.0, 0.1);
-  GetParam(kToneTreble)->InitDouble("Treble", 5.0, 0.0, 10.0, 0.1);
+  GetParam(kToneBass)->InitDouble("Juuret", 5.0, 0.0, 10.0, 0.1);
+  GetParam(kToneMid)->InitDouble("Kaarna", 5.0, 0.0, 10.0, 0.1);
+  GetParam(kToneTreble)->InitDouble("Neulaset", 5.0, 0.0, 10.0, 0.1);
+  GetParam(kSalo)->InitDouble("Salo", 0.0, 0.0, 100.0, 1.0, "%");
+  GetParam(kMetso)->InitDouble("Metso", 0.0, 0.0, 100.0, 1.0, "%");
   GetParam(kOutputLevel)->InitGain("Output", 0.0, -40.0, 40.0, 0.1);
   GetParam(kNoiseGateThreshold)->InitGain("Threshold", -80.0, -100.0, 0.0, 0.1);
   GetParam(kNoiseGateActive)->InitBool("NoiseGateActive", true);
@@ -132,7 +134,6 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     const auto backgroundBitmap = pGraphics->LoadBitmap(BACKGROUND_FN);
     const auto fileBackgroundBitmap = pGraphics->LoadBitmap(FILEBACKGROUND_FN);
     const auto inputLevelBackgroundBitmap = pGraphics->LoadBitmap(INPUTLEVELBACKGROUND_FN);
-    const auto linesBitmap = pGraphics->LoadBitmap(LINES_FN);
     const auto knobBackgroundBitmap = pGraphics->LoadBitmap(KNOBBACKGROUND_FN);
     const auto switchHandleBitmap = pGraphics->LoadBitmap(SLIDESWITCHHANDLE_FN);
     const auto meterBackgroundBitmap = pGraphics->LoadBitmap(METERBACKGROUND_FN);
@@ -156,6 +157,8 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     const auto bassKnobArea = knobsArea.GetGridCell(0, kToneBass, 1, numKnobs).GetPadded(-singleKnobPad);
     const auto midKnobArea = knobsArea.GetGridCell(0, kToneMid, 1, numKnobs).GetPadded(-singleKnobPad);
     const auto trebleKnobArea = knobsArea.GetGridCell(0, kToneTreble, 1, numKnobs).GetPadded(-singleKnobPad);
+    const auto saloKnobArea = knobsArea.GetGridCell(0, kSalo, 1, numKnobs).GetPadded(-singleKnobPad);
+    const auto metsoKnobArea = knobsArea.GetGridCell(0, kMetso, 1, numKnobs).GetPadded(-singleKnobPad);
     const auto outputKnobArea = knobsArea.GetGridCell(0, kOutputLevel, 1, numKnobs).GetPadded(-singleKnobPad);
 
     const auto ngToggleArea =
@@ -216,8 +219,7 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
     };
 
     pGraphics->AttachBackground(BACKGROUND_FN);
-    pGraphics->AttachControl(new IBitmapControl(b, linesBitmap));
-    pGraphics->AttachControl(new IVLabelControl(titleArea, "NEURAL AMP MODELER", titleStyle));
+    pGraphics->AttachControl(new IVLabelControl(titleArea, "KORPI", titleStyle));
     pGraphics->AttachControl(new ISVGControl(modelIconArea, modelIconSVG));
 
 #ifdef NAM_PICK_DIRECTORY
@@ -277,6 +279,8 @@ NeuralAmpModeler::NeuralAmpModeler(const InstanceInfo& info)
       new NAMKnobControl(midKnobArea, kToneMid, "", style, knobBackgroundBitmap), -1, "EQ_KNOBS");
     pGraphics->AttachControl(
       new NAMKnobControl(trebleKnobArea, kToneTreble, "", style, knobBackgroundBitmap), -1, "EQ_KNOBS");
+    pGraphics->AttachControl(new NAMKnobControl(saloKnobArea, kSalo, "", style, knobBackgroundBitmap));
+    pGraphics->AttachControl(new NAMKnobControl(metsoKnobArea, kMetso, "", style, knobBackgroundBitmap));
     pGraphics->AttachControl(new NAMKnobControl(outputKnobArea, kOutputLevel, "", style, knobBackgroundBitmap));
 
     // The meters
@@ -383,6 +387,10 @@ void NeuralAmpModeler::ProcessBlock(iplug::sample** inputs, iplug::sample** outp
   mHighPass.SetParams(highPassParams);
   // mLowPass.SetParams(lowPassParams);
   sample** hpfPointers = mHighPass.Process(irPointers, numChannelsInternal, numFrames);
+
+  // Korpi: Metso (delay) ja sitten Salo (reverb), jotta viiveen toistot kaikuvat luonnollisesti.
+  mMetso.Process(hpfPointers[0], numFrames, GetParam(kMetso)->Value() / 100.0);
+  mSalo.Process(hpfPointers[0], numFrames, GetParam(kSalo)->Value() / 100.0);
   // sample** lpfPointers = mLowPass.Process(hpfPointers, numChannelsInternal, numFrames);
 
   // restore previous floating point state
@@ -406,7 +414,10 @@ void NeuralAmpModeler::OnReset()
   // 10 cycles should be enough to pass the VST3 tests checking tail behavior.
   // I'm ignoring the model & IR, but it's not the end of the world.
   const int tailCycles = 10;
-  SetTailSize(tailCycles * (int)(sampleRate / kDCBlockerFrequency));
+  // Korpi: Salo and Metso ring out longer than the DC blocker, so allow ~5 s of tail.
+  SetTailSize(std::max(tailCycles * (int)(sampleRate / kDCBlockerFrequency), (int)(5.0 * sampleRate)));
+  mSalo.Reset(sampleRate);
+  mMetso.Reset(sampleRate);
   mInputSender.Reset(sampleRate);
   mOutputSender.Reset(sampleRate);
   // If there is a model or IR loaded, they need to be checked for resampling.

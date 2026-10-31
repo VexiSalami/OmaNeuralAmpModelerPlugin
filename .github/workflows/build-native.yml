@@ -18,18 +18,16 @@ jobs:
     runs-on: ${{matrix.os}}
     strategy:
       matrix:
-        os: [macos-latest, windows-latest]
+        # Korpi: Windows only
+        os: [windows-latest]
         include:
-          - os: macos-latest
-            build_dir: build-mac
-            artifact_ext: mac
           - os: windows-latest
             build_dir: build-win
             artifact_ext: win
 
     steps:
     - name: Check out repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         submodules: recursive
 
@@ -54,7 +52,7 @@ jobs:
 
     - name: Add msbuild to PATH (Windows)
       if: matrix.os == 'windows-latest'
-      uses: microsoft/setup-msbuild@v1.0.2
+      uses: microsoft/setup-msbuild@v2
 
     - name: Build Windows
       if: matrix.os == 'windows-latest'
@@ -66,8 +64,9 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{env.PROJECT_NAME}}-${{matrix.artifact_ext}}
+        name: Korpi-${{matrix.artifact_ext}}
         path: ${{env.PROJECT_NAME}}/${{matrix.build_dir}}/out
+        if-no-files-found: error
 
   # test:
   #   name: Test Native

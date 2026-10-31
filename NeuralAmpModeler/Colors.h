@@ -69,7 +69,7 @@ const iplug::igraphics::IColor NAM_3(255, 162, 178, 191); // Cadet Blue Crayola
 
 // Evan Heritage theme colors
 const iplug::igraphics::IColor NAM_0(0, 18, 17, 19); // Transparent
-const iplug::igraphics::IColor NAM_THEMECOLOR(255, 80, 133, 232); // Azure
+const iplug::igraphics::IColor NAM_THEMECOLOR(255, 96, 200, 150); // Korpi: aurora green
 // const iplug::igraphics::IColor NAM_THEMECOLOR(255, 23, 190, 187); // Custom :)
 const iplug::igraphics::IColor NAM_THEMEFONTCOLOR(255, 242, 242, 242); // Dark White
 

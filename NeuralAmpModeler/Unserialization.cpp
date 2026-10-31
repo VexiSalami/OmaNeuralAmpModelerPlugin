@@ -106,11 +106,14 @@ void _UpdateConfigFrom_0_7_14(nlohmann::json& config)
 
 int _GetConfigFrom_0_7_14(const iplug::IByteChunk& chunk, int startPos, nlohmann::json& config)
 {
+  // Korpi: order must match the EParams enum exactly.
   std::vector<std::string> paramNames{"Input",
                                       "Threshold",
-                                      "Bass",
-                                      "Middle",
-                                      "Treble",
+                                      "Juuret",
+                                      "Kaarna",
+                                      "Neulaset",
+                                      "Salo",
+                                      "Metso",
                                       "Output",
                                       "NoiseGateActive",
                                       "ToneStack",
